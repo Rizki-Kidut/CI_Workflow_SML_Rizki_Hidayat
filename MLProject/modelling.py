@@ -43,36 +43,29 @@ best_params = {
     "random_state": 42,
 }
 
-# ========================================
-# MLflow Run
-# ========================================
-with mlflow.start_run(run_name="XGBoost_Best_Model"):
 
-    # Log Parameter
-    mlflow.log_params(best_params)
+model = XGBClassifier(**best_params)
 
-    model = XGBClassifier(**best_params)
+# Training
+model.fit(X_train, y_train)
 
-    # Training
-    model.fit(X_train, y_train)
+# Prediction
+y_pred = model.predict(X_test)
 
-    # Prediction
-    y_pred = model.predict(X_test)
+# Evaluation
+accuracy = accuracy_score(y_test, y_pred)
 
-    # Evaluation
-    accuracy = accuracy_score(y_test, y_pred)
+# Log Metric
+mlflow.log_metric("test_accuracy", accuracy)
 
-    # Log Metric
-    mlflow.log_metric("test_accuracy", accuracy)
+# Save Model
+mlflow.xgboost.log_model(
+    xgb_model=model,
+    artifact_path="model",
+    input_example=input_example
+)
 
-    # Save Model
-    mlflow.xgboost.log_model(
-        xgb_model=model,
-        artifact_path="model",
-        input_example=input_example
-    )
-
-    print("=" * 50)
-    print("Training Finished Successfully")
-    print(f"Test Accuracy : {accuracy:.4f}")
-    print("=" * 50)
+print("=" * 50)
+print("Training Finished Successfully")
+print(f"Test Accuracy : {accuracy:.4f}")
+print("=" * 50)

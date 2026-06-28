@@ -1,15 +1,6 @@
-"""
-Upload preprocessor.joblib ke Google Drive (akun Gmail personal).
-Menggunakan OAuth 2.0 Refresh Token — tidak perlu Shared Drive.
-
-Environment variables yang dibutuhkan:
-    GDRIVE_CLIENT_ID
-    GDRIVE_CLIENT_SECRET
-    GDRIVE_REFRESH_TOKEN
-    GDRIVE_FOLDER_ID  ← ID folder di My Drive yang sudah dibuat
-"""
-
 import os
+import shutil
+import mlflow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -34,10 +25,31 @@ service = build('drive', 'v3', credentials=credentials)
 
 # ── 3. Konfigurasi
 FOLDER_ID  = os.environ["GDRIVE_FOLDER_ID"]
-LOCAL_FILE = "Pre-processing/preprocessor.joblib"
-FILE_NAME  = "preprocessor.joblib"
+RUN_ID     = os.environ.get("RUN_ID")
+
+if not RUN_ID:
+    raise ValueError("❌ RUN_ID tidak ditemukan. Pastikan step GitHub Actions sebelumnya telah mengekspor RUN_ID.")
+
+# ── 4. Cari lokasi Folder Artifact menggunakan MLflow & Zip Folder tersebut
+print(f"🔍 Mencari lokasi artifact untuk RUN_ID: {RUN_ID}")
+client = mlflow.tracking.MlflowClient()
+run = client.get_run(RUN_ID)
+
+# Hapus prefix 'file://' jika ada agar menjadi local path yang valid
+local_artifact_path = run.info.artifact_uri.replace("file://", "")
+
+if not os.path.exists(local_artifact_path):
+    raise FileNotFoundError(f"❌ Folder artifact tidak ditemukan di: {local_artifact_path}")
+
+print(f"📦 Mengompresi folder artifacts dari: {local_artifact_path}")
+zip_base_name = "mlflow_artifacts_temp"
+shutil.make_archive(zip_base_name, 'zip', local_artifact_path)
+
+LOCAL_FILE = f"{zip_base_name}.zip"
+FILE_NAME  = f"model_artifacts_{RUN_ID}.zip" # Nama file saat di Google Drive
 
 
+# ── 5. Fungsi Upload
 def cari_file_existing(folder_id, file_name):
     """Cari file dengan nama tertentu di folder Google Drive."""
     query = (
@@ -56,13 +68,10 @@ def cari_file_existing(folder_id, file_name):
 
 def upload_file(local_path, file_name, folder_id):
     """Upload ke Google Drive. Overwrite jika file sudah ada."""
-    if not os.path.exists(local_path):
-        raise FileNotFoundError(f"❌ File tidak ditemukan: {local_path}")
-
     file_size = os.path.getsize(local_path) / (1024 * 1024)
-    print(f"📦 File  : {file_name}")
+    print(f"🚀 Bersiap mengunggah File  : {file_name}")
     print(f"📏 Size  : {file_size:.1f} MB")
-    print(f"📂 Folder: {folder_id}")
+    print(f"📂 Ke Folder GDrive: {folder_id}")
 
     media    = MediaFileUpload(local_path, resumable=True)
     existing = cari_file_existing(folder_id, file_name)
@@ -90,10 +99,9 @@ def upload_file(local_path, file_name, folder_id):
         ).execute()
         print(f"✅ Berhasil diupload: {created['name']} (ID: {created['id']})")
 
-
 if __name__ == "__main__":
     print("=" * 50)
-    print("☁️  Upload ke Google Drive (OAuth)")
+    print("☁️  Upload MLflow Artifacts ke Google Drive (OAuth)")
     print("=" * 50)
     upload_file(LOCAL_FILE, FILE_NAME, FOLDER_ID)
     print("=" * 50)
